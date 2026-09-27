@@ -1,6 +1,6 @@
 # Server Setup and Initial Verification
 
-**Status:** Baseline verification in progress. The observations below are based on terminal results provided by the lab owner.
+**Status:** Initial server baseline verification complete. Functional Zabbix validation remains pending. The observations below are based on terminal results and confirmations provided by the lab owner.
 
 ## Confirmed Environment
 
@@ -9,12 +9,12 @@
 | Platform | Oracle VirtualBox on Windows |
 | Operating system | Ubuntu 26.04.1 LTS (`resolute`) |
 | Running kernel after the upgrade and reboot | `7.0.0-34-generic` |
-| Current hostname | `ubuntu-server-26` |
+| Current hostname | `linux01` (verified after reboot) |
 | Login account | `matt` |
 | Network mode | NAT |
 | Network interface | `enp0s3`, state `UP` |
 | Guest IPv4 address at inspection | `10.0.2.15/24` |
-| Remote access | Successful SSH login from Windows |
+| Remote access | SSH from Windows to `127.0.0.1:2222` as `matt`, using the account password |
 
 ## Verification Performed
 
@@ -28,7 +28,7 @@ ip -br addr
 sudo ss -ltnp
 ```
 
-`whoami` returned `matt`, `hostname` returned `ubuntu-server-26`, and `/etc/os-release` reported `VERSION_ID="26.04"` and `PRETTY_NAME="Ubuntu 26.04.1 LTS"`.
+At the initial inspection, `whoami` returned `matt`, `hostname` returned `ubuntu-server-26`, and `/etc/os-release` reported `VERSION_ID="26.04"` and `PRETTY_NAME="Ubuntu 26.04.1 LTS"`.
 
 The socket inspection showed:
 
@@ -40,6 +40,18 @@ The socket inspection showed:
 | 10051 | `zabbix_server` |
 
 SSH login was subsequently confirmed. The other listeners establish that processes are present; HTTP responses, Zabbix configuration, metric collection, and alerts have not yet been validated.
+
+## SSH Access
+
+The lab owner confirmed connecting from Windows PowerShell with:
+
+```powershell
+ssh -p 2222 matt@127.0.0.1
+```
+
+The `-p 2222` option selects the SSH destination port on Windows. Here, `127.0.0.1` is the Windows host's loopback address, used to reach the VM through VirtualBox NAT forwarding. The SSH listener inside Ubuntu was observed on TCP port `22`.
+
+Authentication uses the Ubuntu account password for `matt`. SSH key authentication has not yet been configured or verified as part of this lab. The password itself is not recorded in this document.
 
 ## Account and Resource Checks
 
@@ -59,10 +71,39 @@ The account `matt` has UID and primary GID `1000` and belongs to the `sudo` grou
 | Memory visible to Ubuntu | 3.3 GiB total, 1.1 GiB used, 2.2 GiB available |
 | Swap | 3.7 GiB total, 0 B used |
 | Root filesystem device | `/dev/mapper/ubuntu--vg-ubuntu--lv` |
-| Root filesystem usage | 19G size, 7.8G used, 9.4G available, 46% used (latest `df -h` observation) |
-| Boot filesystem | `/dev/sda2`, 2.0G size, 97M used, 1.7G available, 6% used |
+| Root filesystem usage | 19G size, 8.1G used, 9.0G available, 48% used (post-upgrade `df -h` observation) |
+| Boot filesystem | `/dev/sda2`, 2.0G size, 184M used, 1.7G available, 11% used |
 
-These values are a point-in-time observation. The root filesystem size does not establish the size of the entire virtual disk or the amount of unallocated space.
+These memory and filesystem usage figures are point-in-time observations.
+
+## Disk Layout
+
+After the upgrade, the lab owner inspected the disk layout and filesystem usage:
+
+```bash
+lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS
+df -h / /boot
+```
+
+| Device | Size reported by `lsblk` | Type / filesystem | Role |
+| --- | --- | --- | --- |
+| `/dev/sda` | 40G | Disk | Virtual disk presented to Ubuntu |
+| `/dev/sda1` | 1G | Partition / vfat | EFI system partition mounted at `/boot/efi` |
+| `/dev/sda2` | 2G | Partition / ext4 | Boot filesystem mounted at `/boot` |
+| `/dev/sda3` | 36.9G | Partition / LVM2_member | Storage backing the LVM logical volume |
+| `/dev/mapper/ubuntu--vg-ubuntu--lv` | 18.5G | Logical volume / ext4 | Root filesystem mounted at `/` |
+
+The output also showed SquashFS loop devices mounted under `/snap` and an optical device, `/dev/sr0`, containing an ISO 9660 filesystem.
+
+The lab owner then checked the volume group:
+
+```bash
+sudo vgs
+```
+
+The `ubuntu-vg` volume group contains one physical volume and one logical volume. Its reported total size is `<36.95g`, with `18.47g` (approximately 18.47 GiB) free for allocation to logical volumes.
+
+This unallocated LVM capacity is separate from the approximately 9.0 GiB available inside the root filesystem. No volume or filesystem resize has been performed during these checks.
 
 ## Routing and DNS Checks
 
@@ -193,9 +234,62 @@ The `un` entries for `zabbix-apache-conf` and `zabbix-server-pgsql` represent pa
 
 **Upgrade status:** The initial package upgrade and reboot verification are complete. Service activity is confirmed; HTTP responses, Zabbix metrics, alerts, and recovery still require functional testing.
 
-## Pending Baseline Checks
+## Hostname Change
 
-- Inspect the disk layout.
-- Review the planned hostname change to `LINUX01` before applying it.
-- Record the final SSH forwarding rule and authentication method.
-- Validate the Zabbix frontend, collected metrics, alerts, and recovery.
+### Pre-change Checks
+
+Before changing the system hostname, the lab owner ran:
+
+```bash
+cat /etc/hosts
+sudo zabbix_agent2 -c /etc/zabbix/zabbix_agent2.conf -t agent.hostname
+```
+
+The local hosts file mapped `127.0.0.1` to `localhost` and `127.0.1.1` to `ubuntu-server-26`. It also contained IPv6 localhost, local-network, multicast, all-nodes, and all-routers entries.
+
+The agent test returned:
+
+```text
+agent.hostname                                [s|Zabbix server]
+```
+
+The tested agent identity was `Zabbix server`, which differed from the system hostname. This local test does not establish connectivity to the Zabbix server or successful metric collection.
+
+### Verification After the Change
+
+The planned lab host `LINUX01` uses the lowercase system hostname `linux01`. After the change, the lab owner ran:
+
+```bash
+hostname
+cat /etc/hostname
+getent hosts linux01
+sudo zabbix_agent2 -c /etc/zabbix/zabbix_agent2.conf -t agent.hostname
+```
+
+| Check | Confirmed result |
+| --- | --- |
+| Running hostname | `linux01` |
+| Hostname saved in `/etc/hostname` | `linux01` |
+| Local name resolution | `127.0.1.1 linux01 ubuntu-server-26` |
+| Agent identity in the local test | `Zabbix server`, unchanged from the pre-change test |
+
+The old name remains a local alias. The running hostname and saved configuration agree. The name-resolution check was performed inside Ubuntu and does not establish that Windows can resolve `linux01`.
+
+### Verification After Reboot
+
+After rebooting, the lab owner ran:
+
+```bash
+hostname
+getent hosts linux01
+systemctl --failed --no-pager
+systemctl is-active nginx mysql zabbix-server zabbix-agent2 php8.5-fpm
+```
+
+The hostname remained `linux01`, and the local lookup returned `127.0.1.1 linux01 ubuntu-server-26`. No failed systemd units were listed. Nginx, MySQL, Zabbix Server, Zabbix Agent 2, and PHP-FPM all returned `active`.
+
+These results confirm that the hostname change persisted across the reboot and that the five checked services were active afterward. Application-level monitoring checks remain pending.
+
+## Deferred Monitoring Validation
+
+The Zabbix frontend, collected metrics, alerts, and recovery still require functional validation during the monitoring stage. Active service states alone do not establish that monitoring works.
