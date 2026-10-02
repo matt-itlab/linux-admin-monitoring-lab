@@ -1,6 +1,6 @@
 # Nginx Site Configuration
 
-**Status:** Static lab site verified from Windows. Configuration validation and service reload both returned exit code `0`, and Nginx remained active. A request with `Host: lab.test` returned the prepared HTML and HTTP `200`; browser access by IP continued to display the Zabbix login page. The lab access log recorded the successful request, the error-log read returned no entries, and the service journal showed startup and reload events.
+**Status:** Static lab site configuration, HTTP access, and logs are verified. The controlled Nginx outage exercise is complete: Windows curl failure `56` was diagnosed using service status and the journal, starting Nginx restored the lab HTML with HTTP `200` and exit code `0`, and the custom Zabbix HTTP problem was resolved. Nginx and Zabbix Server were both active after the start command.
 
 ## Existing HTTP Baseline
 
@@ -226,3 +226,97 @@ The two observed requests demonstrate the difference between GET and HEAD:
 | `HEAD` | `/` | `200` | `0` |
 
 HEAD returns response headers without a response body. The zero in this access-log field therefore represents body bytes, not the total amount of network traffic. See [HTTP HEAD semantics](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.3.2) and the [Nginx combined log format](https://nginx.org/en/docs/http/ngx_http_log_module.html#log_format).
+
+## Controlled Nginx Outage
+
+**Status: Complete.** HTTP failure, stopped-service diagnosis, service restoration, Windows HTTP recovery, and the custom Zabbix trigger's problem and recovery event are confirmed.
+
+### Symptom
+
+After receiving the controlled outage instructions, the lab owner ran this check from Windows:
+
+```powershell
+curl.exe -sS --max-time 5 -H "Host: lab.test" http://127.0.0.1:8080/
+echo $LASTEXITCODE
+```
+
+The supplied result was:
+
+```text
+curl: (56) Recv failure: Connection was aborted
+56
+```
+
+The client failed to retrieve the page. Exit code `56` indicates a network receive error; the client message alone does not identify the cause. See the [curl error reference](https://curl.se/libcurl/c/libcurl-errors.html).
+
+### Diagnostic Checks and Cause
+
+The diagnostic question was whether Nginx was running and what its recent service events showed. The lab owner ran on Ubuntu:
+
+```bash
+sudo systemctl status nginx --no-pager -l
+sudo journalctl -u nginx -b -n 20 --no-pager
+```
+
+| Evidence | Observed result |
+| --- | --- |
+| Unit configuration | Loaded and `enabled` |
+| Current service state | `inactive (dead)` since `2026-10-02 20:30:03 UTC` |
+| Time inactive at inspection | `2min 44s` |
+| Previous startup | `20:28:58` in the supplied journal |
+| Stop command and main process exit | `status=0/SUCCESS` |
+
+Relevant journal lines were:
+
+```text
+Oct 02 20:30:03 linux01 systemd[1]: Stopping nginx.service - A high performance web server and a reverse proxy server...
+Oct 02 20:30:03 linux01 systemd[1]: nginx.service: Deactivated successfully.
+Oct 02 20:30:03 linux01 systemd[1]: Stopped nginx.service - A high performance web server and a reverse proxy server.
+```
+
+The status output explicitly identifies the stop time as UTC. It confirms that Nginx was stopped, explaining the HTTP outage in this exercise. The journal and successful exit statuses show an orderly stop. `enabled` describes startup configuration, while `inactive (dead)` describes the current runtime state. The displayed `Duration: 1min 5.003s` refers to the preceding active period.
+
+### Repair and Verification
+
+The lab owner ran on Ubuntu:
+
+```bash
+sudo systemctl start nginx
+date -Is
+systemctl is-active nginx zabbix-server
+```
+
+The output was:
+
+```text
+2026-10-02T20:41:35+00:00
+active
+active
+```
+
+Both services were active after the start command. The timestamp was printed after `systemctl start` returned; it is a post-start observation, not an exact service-start timestamp from the journal.
+
+The lab owner repeated the HTTP check from Windows:
+
+```powershell
+curl.exe -sS --max-time 5 -H "Host: lab.test" -w "\nHTTP %{http_code}\n" http://127.0.0.1:8080/
+echo $LASTEXITCODE
+```
+
+The prepared HTML returned, including `linux01 — Linux Administration Lab`, followed by `HTTP 200`. The exit code was `0`. This confirms recovery of the lab page through the Windows-to-VM forwarding path.
+
+The supplied Zabbix event-history screenshot showed:
+
+| Field | Observed value |
+| --- | --- |
+| Host | `Zabbix server` |
+| Problem | `Nginx: Linux lab HTTP check failed` |
+| Severity | `Average` |
+| Event time | `10:30:31 PM` (UI time) |
+| Recovery time | `10:42:01 PM` (UI time) |
+| Status | `RESOLVED` |
+| Duration | `11m 30s` |
+
+The event was resolved after starting Nginx; no manual event closure was reported. Event duration measures the time between problem creation and recovery in Zabbix, rather than the entire service interruption. The [HTTP trigger timeline](06-zabbix-monitoring.md#http-trigger-problem-and-recovery) distinguishes UI timestamps from UTC service observations.
+
+Starting the stopped Nginx service restored HTTP access. The active service checks, returned page, successful curl exit, and resolved monitoring event complete the exercise. This is the fourth completed controlled failure, alongside the permissions, HTTP firewall, and Zabbix agent exercises.

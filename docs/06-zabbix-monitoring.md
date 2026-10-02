@@ -1,6 +1,6 @@
 # Zabbix Monitoring Verification
 
-**Status:** Authenticated frontend access and opening the dashboard are confirmed, and the lab owner reports changing the default password. The frontend reports a running Zabbix server at `localhost:10051` and matching server/frontend versions `7.0.31`. The enabled `Zabbix server` entry monitors `linux01` through `127.0.0.1:10050`; green availability and fresh uptime, CPU, memory, and root filesystem metrics were verified before the outage exercise. Monitoring of the unidentified `matt` entry at `192.168.0.28:10050` has been disabled while retaining its configuration. Its original target and the cause of its earlier timeout remain unknown. The completed agent-availability exercise verified the service stop/start sequence in the journal, problem detection, recovery after starting Agent 2, and resumed uptime collection. Network metrics and Nginx availability monitoring remain planned.
+**Status:** Authenticated frontend access and opening the dashboard are confirmed, and the lab owner reports changing the default password. The frontend reported a running Zabbix server at `localhost:10051` and matching server/frontend versions `7.0.31`. The enabled `Zabbix server` entry monitors `linux01` through `127.0.0.1:10050`; uptime, CPU, memory, root filesystem, and network traffic metrics have been verified. Monitoring of the unidentified `matt` entry at `192.168.0.28:10050` has been disabled while retaining its configuration. Its original target and the cause of its earlier timeout remain unknown. The agent-availability and custom HTTP trigger exercises are complete. Starting Nginx restored Windows HTTP access, both Nginx and Zabbix Server were active afterward, and the custom HTTP event was resolved with a displayed duration of `11m 30s`.
 
 ## Existing Deployment
 
@@ -294,10 +294,95 @@ The journal establishes a service interruption of **3 minutes 56 seconds**. The 
 
 The cause of the exercise's agent unavailability was the stopped Agent 2 service, confirmed by the journal. Starting the service restored it; both services were then active, the event became `RESOLVED`, and fresh uptime data returned. This completes the third controlled failure record, alongside the permissions and HTTP firewall exercises.
 
-## Next Verification Steps
+## Network Traffic Metrics
 
-- Verify incoming and outgoing traffic metrics for `enp0s3`, including units and last-check ages.
-- Configure Nginx availability monitoring and a custom trigger, then verify their behavior.
+On 2026-10-02, the lab owner supplied a **Monitoring → Latest data** screenshot for `Zabbix server`, filtered to `enp0s3`:
+
+| Item | Last check shown | Last value shown | Change shown |
+| --- | --- | --- | --- |
+| `Interface enp0s3: Bits received` | `30s` | `2.18 Kbps` | `-592 bps` |
+| `Interface enp0s3: Bits sent` | `27s` | `2.68 Kbps` | `-872 bps` |
+
+Both rows had tags `component: network` and `interface: enp0s3`. These fresh values confirm collection of incoming and outgoing traffic rates on the VM's NAT interface. The displayed units are bits per second, with `Kbps` denoting kilobits per second; the negative changes indicate lower rates than the preceding values, not negative traffic. These are traffic samples, not a measurement of the interface's maximum capacity.
+
+The network items and their rate preprocessing are documented in the official [Linux by Zabbix agent template](https://raw.githubusercontent.com/zabbix/zabbix/release/7.0/templates/os/linux/README.md).
+
+## HTTP Web Scenario Baseline
+
+On 2026-10-02, after following the web scenario setup instructions, the lab owner supplied the **Details of web scenario: Linux lab HTTP** view:
+
+| Field | Observed value |
+| --- | --- |
+| Scenario | `Linux lab HTTP` |
+| Step | `Homepage` |
+| Response code | `200` |
+| Step status | `OK` |
+| Total status | `OK` |
+| Response time | `0.36 ms` |
+| Download speed | `503.33 KBps` |
+
+The result confirms successful scenario execution and collected response-time and download-speed samples. `KBps` represents kilobytes per second, unlike the network items' `Kbps` (kilobits per second). These samples do not measure the Internet connection's capacity. See the [web monitoring item reference](https://www.zabbix.com/documentation/7.0/en/manual/web_monitoring/items).
+
+The setup instructions specified a request from Zabbix Server on Ubuntu to `http://127.0.0.1/`, with header `Host: lab.test`, required text `Linux Administration Lab`, and required status `200`. This follows the existing [Nginx routing](05-nginx.md). The supplied result view does not show those configuration fields. The intended check covers the local HTTP endpoint; access through Windows NAT forwarding is tested separately.
+
+This establishes the successful baseline. The custom trigger and its subsequent problem and recovery event are verified below. Windows HTTP failure, service diagnosis, and restored HTTP access are documented in the Nginx outage exercise.
+
+## Custom HTTP Trigger
+
+On 2026-10-02, the lab owner supplied a trigger-list screenshot after creating the custom trigger for the scenario:
+
+| Field | Observed value |
+| --- | --- |
+| Name | `Nginx: Linux lab HTTP check failed` |
+| Severity | `Average` |
+| Value | `OK` |
+| Status | `Enabled` |
+
+The displayed expression was:
+
+```text
+last(/Zabbix server/web.test.fail[Linux lab HTTP])>0
+```
+
+`web.test.fail` returns the failed step number, or `0` when all steps succeed. `last()` selects the latest value, so the expression detects a failed scenario step. With the single `Homepage` step, a failure returns `1`. See the [web monitoring item and trigger examples](https://www.zabbix.com/documentation/7.0/en/manual/web_monitoring/items).
+
+The screenshot confirms that the custom trigger exists, is enabled, and reports `OK` before the outage exercise. The trigger list does not show the configured recovery mode.
+
+During the controlled outage, Windows curl returned exit code `56`, and Nginx status and journal output confirmed an orderly stop at `2026-10-02 20:30:03 UTC`. The [Nginx outage exercise](05-nginx.md#controlled-nginx-outage) records the diagnosis, repair, and Windows HTTP recovery.
+
+## HTTP Trigger: Problem and Recovery
+
+After running `sudo systemctl start nginx`, the lab owner supplied a shell timestamp of `2026-10-02T20:41:35+00:00`. The following `systemctl is-active nginx zabbix-server` check returned `active` for both services. Windows curl then returned the lab HTML, HTTP `200`, and exit code `0`.
+
+The supplied event-history screenshot confirmed:
+
+| Field | Observed value |
+| --- | --- |
+| Host | `Zabbix server` |
+| Problem | `Nginx: Linux lab HTTP check failed` |
+| Severity | `Average` |
+| Event time | `10:30:31 PM` (UI time) |
+| Recovery time | `10:42:01 PM` (UI time) |
+| Status | `RESOLVED` |
+| Duration | `11m 30s` |
+
+The event confirms that the custom HTTP trigger detected a failed scenario and subsequently recovered after service restoration. No manual event closure was reported. The screenshot also showed a separate, already resolved Zabbix-server uptime warning; that row is not the HTTP incident.
+
+| Event on 2026-10-02 | Time | Evidence |
+| --- | --- | --- |
+| Nginx stopped | `20:30:03 UTC` | Service status and journal |
+| HTTP problem created | `10:30:31 PM` (UI time) | Zabbix event history |
+| Post-start shell timestamp | `20:41:35 UTC` | `date -Is` after `systemctl start nginx` |
+| HTTP problem resolved | `10:42:01 PM` (UI time) | Zabbix event history |
+
+The event lasted **11 minutes 30 seconds**, using the UI's timestamps. The service stop and post-start shell observation are **11 minutes 32 seconds** apart; the latter was printed after the start command completed, so this interval is not an exact measurement of service downtime. The UI times are consistent with UTC+02:00, but the frontend timezone setting was not inspected. The table therefore preserves the separate clock labels rather than assuming an offset for detection or recovery-delay calculations.
+
+Service activity, Windows HTTP recovery, and the resolved custom trigger complete the Nginx monitoring exercise. The results demonstrate local HTTP failure detection by Zabbix Server and recovery of access through Windows NAT forwarding.
+
+## Next Steps
+
+- Build the Bash health check incrementally, then verify scheduled execution with cron.
+- Complete the planned DNS/connectivity troubleshooting exercise.
 - Revisit the retained `matt` configuration if its intended target is identified.
 
-The agent-availability exercise is complete. Journal evidence, problem detection, service activity after starting Agent 2, event recovery, and resumed uptime collection are verified. Network traffic metrics and Nginx availability checks have not yet been verified.
+Both monitoring outage exercises are complete: Agent 2 recovery restored metric collection, and Nginx recovery restored HTTP access. The corresponding availability and custom HTTP problem events were resolved.
