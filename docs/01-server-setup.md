@@ -14,7 +14,7 @@
 | Network mode | NAT |
 | Network interface | `enp0s3`, state `UP` |
 | Guest IPv4 address at inspection | `10.0.2.15/24` |
-| Remote access | SSH from Windows to `127.0.0.1:2222` as `matt`, using the account password |
+| Remote access during the initial baseline | SSH from Windows to `127.0.0.1:2222` as `matt`, using the account password; see [SSH verification](03-ssh.md) for subsequent key setup and hardening |
 
 ## Verification Performed
 
@@ -51,7 +51,7 @@ ssh -p 2222 matt@127.0.0.1
 
 The `-p 2222` option selects the SSH destination port on Windows. Here, `127.0.0.1` is the Windows host's loopback address, used to reach the VM through VirtualBox NAT forwarding. The SSH listener inside Ubuntu was observed on TCP port `22`.
 
-Authentication uses the Ubuntu account password for `matt`. SSH key authentication has not yet been configured or verified as part of this lab. The password itself is not recorded in this document.
+At this initial stage, authentication used the Ubuntu account password for `matt`. Key authentication and rejection of password-only login were subsequently verified in the [SSH stage](03-ssh.md). The password itself is not recorded in this document.
 
 ## Account and Resource Checks
 
@@ -292,4 +292,4 @@ These results confirm that the hostname change persisted across the reboot and t
 
 ## Deferred Monitoring Validation
 
-The Zabbix frontend, collected metrics, alerts, and recovery still require functional validation during the monitoring stage. Active service states alone do not establish that monitoring works.
+The Zabbix login page was subsequently verified from Windows during the [networking and firewall checks](04-networking-and-firewall.md). The lab owner later confirmed successful login and opening the dashboard; see [Zabbix monitoring verification](06-zabbix-monitoring.md). Current metric collection, alerts, and recovery still require functional validation during the monitoring stage. Active service states and frontend access alone do not establish that monitoring works.
