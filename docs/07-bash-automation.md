@@ -1,6 +1,6 @@
 # Bash Health Check Development
 
-**Status:** The repository script checks service activity, root filesystem usage, memory usage, and ICMP reachability, returning one overall exit code. Ubuntu runs verified service or resource-check failure (`1`), invalid input (`1`), ICMP failure (`1`), and preservation of an earlier service failure despite successful resource and ICMP checks. After normal settings were restored, the final run passed all four checks and returned `0`. The supplied final Ubuntu source matches the repository logic. Logging and cron execution remain pending.
+**Status:** The four-check script, timestamped file logging, and five-minute cron schedule are verified. Ubuntu runs confirmed service or resource-check failure (`1`), invalid input (`1`), ICMP failure (`1`), and preservation of an earlier service failure despite successful resource and ICMP checks. The installed user crontab confirms the schedule, `PATH=/usr/bin:/bin`, and execution through `/usr/bin/bash` as `matt`. The cron journal and script log agree on the run at `2026-10-04T15:00:01+00:00`, with all checks passing and `RESULT: exit_code=0`.
 
 ## First Verified Service Check
 
@@ -322,7 +322,79 @@ The failed ICMP check set the overall failure status. The missing-unit run confi
 
 The final `cat ~/linux-lab/scripts/health-check.sh` output confirmed `service='nginx'`, both resource thresholds at `80`, actual measurements from `df` and `free`, and `ping_target='1.1.1.1'`. All four checks precede the single final `exit "$exit_code"`. Repository inspection confirmed matching logic with consistent indentation.
 
-## Planned Next Steps
+## Timestamped File Logging
 
-- Add a timestamp and overall result to each run, then verify appending output to a log file.
-- Add cron scheduling and verify an actual scheduled run.
+The lab owner added a timestamp before the checks and an overall result immediately before the final exit:
+
+```bash
+echo "=== $(date -Is) health check ==="
+```
+
+```bash
+echo "RESULT: exit_code=$exit_code"
+exit "$exit_code"
+```
+
+The lab owner then ran these commands on Ubuntu:
+
+```bash
+mkdir -p ~/linux-lab/logs
+bash ~/linux-lab/scripts/health-check.sh >> ~/linux-lab/logs/health-check.log 2>&1
+echo $?
+tail -n 6 ~/linux-lab/logs/health-check.log
+```
+
+The script returned **`0`**. The supplied log excerpt was:
+
+```text
+=== 2026-10-04T14:49:03+00:00 health check ===
+OK: nginx is running
+OK: root filesystem usage is 49%
+OK: memory usage is 34%
+OK: 1.1.1.1 responds to ICMP
+RESULT: exit_code=0
+```
+
+The timestamp includes a UTC offset of `+00:00`. The shell uses `>>` to append output to `~/linux-lab/logs/health-check.log` and `2>&1` to direct standard error to the same file. The script itself continues to write its report to standard output and return the accumulated exit code. This first test verified logging from a manual invocation; the cron-triggered run is documented below. The repository script includes the two reporting lines used in this exercise.
+
+## Cron Scheduling
+
+The lab owner supplied these checks from the Ubuntu session as `matt`:
+
+| Command | Observed output |
+| --- | --- |
+| `systemctl is-active cron` | `active` |
+| `crontab -l` | `no crontab for matt` |
+| `command -v bash` | `/usr/bin/bash` |
+
+The cron service was running, and no user crontab existed for `matt` at the time of this initial inspection. After setup, the lab owner supplied `crontab -l` from the `matt` session. Its active configuration lines were:
+
+```cron
+PATH=/usr/bin:/bin
+*/5 * * * * /usr/bin/bash /home/matt/linux-lab/scripts/health-check.sh >> /home/matt/linux-lab/logs/health-check.log 2>&1
+```
+
+The job uses absolute script and log paths, explicitly invokes Bash, and supplies a command search path. The five schedule fields specify every fifth minute of each hour: `00`, `05`, `10`, through `55`. User crontabs run as their owner and omit the extra username field used in system crontabs. See the [Ubuntu crontab format reference](https://manpages.ubuntu.com/manpages/resolute/man5/crontab.5.html).
+
+The installed crontab confirms both the five-minute schedule and the explicit `PATH`. Its command matches the journal entry below, which verifies an actual invocation as `matt` and appending output to the expected log file.
+
+### Verified Scheduled Run
+
+The lab owner inspected the log and cron journal at `2026-10-04T15:00:18+00:00`. The output of `tail -n 12 ~/linux-lab/logs/health-check.log` retained the earlier manual run at `14:49:03` and showed this new block:
+
+```text
+=== 2026-10-04T15:00:01+00:00 health check ===
+OK: nginx is running
+OK: root filesystem usage is 49%
+OK: memory usage is 34%
+OK: 1.1.1.1 responds to ICMP
+RESULT: exit_code=0
+```
+
+The matching output from `sudo journalctl -u cron --since "10 minutes ago" --no-pager` included:
+
+```text
+Oct 04 15:00:01 linux01 CRON[4528]: (matt) CMD (/usr/bin/bash /home/matt/linux-lab/scripts/health-check.sh >> /home/matt/linux-lab/logs/health-check.log 2>&1)
+```
+
+The journal also showed the cron session opening and closing for `matt`. The matching timestamp and command establish that cron invoked the health check as that user. The script's log reports all four checks successful and the overall result `0`; the earlier manual record remained in the file. This completes verification of an actual scheduled run and appended logging.

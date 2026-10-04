@@ -3,6 +3,8 @@
 exit_code=0
 service='nginx'
 
+echo "=== $(date -Is) health check ==="
+
 if systemctl is-active --quiet "$service"; then
     echo "OK: $service is running"
 else
@@ -49,4 +51,5 @@ else
     exit_code=1
 fi
 
+echo "RESULT: exit_code=$exit_code"
 exit "$exit_code"
