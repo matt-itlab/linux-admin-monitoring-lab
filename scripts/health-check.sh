@@ -25,4 +25,19 @@ else
     exit_code=1
 fi
 
+memory_usage=$(LC_ALL=C free -m | awk '$1 == "Mem:" {print int(($2 - $7) / $2 * 100)}')
+memory_limit=80
+
+if [[ "$memory_usage" =~ ^[0-9]+$ ]]; then
+    if [ "$memory_usage" -ge "$memory_limit" ]; then
+        echo "ERROR: memory usage is $memory_usage%"
+        exit_code=1
+    else
+        echo "OK: memory usage is $memory_usage%"
+    fi
+else
+    echo "ERROR: invalid memory usage"
+    exit_code=1
+fi
+
 exit "$exit_code"

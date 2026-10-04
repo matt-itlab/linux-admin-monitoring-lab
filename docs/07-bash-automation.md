@@ -1,6 +1,6 @@
 # Bash Health Check Development
 
-**Status:** The repository script checks service activity and root filesystem usage, validates the disk input, and returns one overall exit code. Ubuntu runs verified success (`0`), either check failing (`1`), invalid disk input (`1`), and preservation of a service failure despite a successful disk check. Final source inspection confirmed `service='nginx'`, disk usage obtained through `df` and `awk`, and `disk_limit=80`. The repository script matches that logic. Memory and connectivity checks and cron execution remain pending.
+**Status:** The repository script checks service activity, root filesystem usage, and memory usage, validates the usage values, and returns one overall exit code. Ubuntu runs verified success (`0`), service or resource-check failure (`1`), invalid input (`1`), and preservation of an earlier service failure despite successful resource checks. Final source inspection confirmed `service='nginx'`, live disk and memory measurements, and both thresholds restored to `80`. The repository script matches that logic. Connectivity checks and cron execution remain pending.
 
 ## First Verified Service Check
 
@@ -233,7 +233,53 @@ The two requested invalid inputs were an empty string and `abc`; the transcript 
 
 After these tests, the lab owner supplied the final `cat ~/linux-lab/scripts/health-check.sh` output. It confirmed restoration of `service='nginx'`, the `df` and `awk` pipeline, and `disk_limit=80`. Source review confirmed that the threshold comparison is nested inside the numeric-input branch, invalid input sets `exit_code=1`, initialization occurs once at the start, and a single `exit "$exit_code"` remains at the end. The repository script was synchronized with this logic, using consistent indentation.
 
+## Memory Baseline
+
+On 2026-10-04, the lab owner ran `LC_ALL=C free -m` on Ubuntu and supplied:
+
+```text
+               total        used        free      shared  buff/cache   available
+Mem:            3379        1137        1744          12         727        2242
+Swap:           3780           0        3780
+```
+
+The `Mem:` row reports **3379 MiB total** and **2242 MiB available**. The memory check uses `(total - available) / total * 100`, which gives approximately **33.65%** for this sample. Using available memory accounts for memory that can be reclaimed for applications, rather than treating all cache as unavailable. The separate swap row reports **0 MiB used**.
+
+### Percentage Extraction
+
+The lab owner then ran:
+
+```bash
+LC_ALL=C free -m | awk '$1 == "Mem:" {print int(($2 - $7) / $2 * 100)}'
+```
+
+Observed output:
+
+```text
+33
+```
+
+The condition selects the `Mem:` row by its first field. Fields `$2` and `$7` provide total and available memory; `int()` discards the fractional part of the calculated percentage. The observed integer result is consistent with the earlier sample. Variable assignment, validation, threshold comparison, and integration into the saved script were subsequently verified below.
+
+### Memory Check Integration and Verification
+
+The lab owner added the memory check after the disk check and before the final exit. It captures the percentage in `memory_usage`, validates it with `^[0-9]+$`, and compares it with `memory_limit` using `-ge`. Invalid input or usage at or above the threshold sets `exit_code=1`; a successful check preserves the existing result.
+
+Supplied Ubuntu runs of `bash ~/linux-lab/scripts/health-check.sh`, each followed immediately by `echo $?`, confirmed:
+
+| Test case | Service result | Disk result | Memory result | Exit code |
+| --- | --- | --- | --- | --- |
+| Normal settings | Nginx OK | 49%, OK | 34%, OK | `0` |
+| Lowered memory threshold | Nginx OK | 49%, OK | 34%, ERROR | `1` |
+| Invalid memory input after correction | Nginx OK | 49%, OK | `ERROR: invalid memory usage` | `1` |
+| Deliberately nonexistent unit | ERROR | 49%, OK | 34%, OK | `1` |
+| Normal settings restored | Nginx OK | 49%, OK | 34%, OK | `0` |
+
+An intermediate run also printed `line 31: [: : integer expected`, followed by `OK: memory usage is 34%`. No exit code or source for that intermediate version was supplied. The diagnostic indicates that a numeric comparison received an invalid argument; the transcript does not establish which operand was incorrect. The later invalid-input run correctly printed an error and returned `1`.
+
+The final supplied source confirmed `service='nginx'`, actual measurements from `df` and `free`, and both `disk_limit=80` and `memory_limit=80`. The memory comparison is nested inside its numeric-input guard, with initialization only at the start and one exit at the end. The repository already contained the memory logic with the temporary threshold `30`; that threshold was restored to `80` to match the verified final Ubuntu source.
+
 ## Planned Next Steps
 
-- Add memory and connectivity checks incrementally.
+- Add connectivity checks while preserving the overall exit code.
 - Add logging and cron scheduling, then verify an actual scheduled run.
