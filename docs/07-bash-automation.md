@@ -1,6 +1,6 @@
 # Bash Health Check Development
 
-**Status:** The repository script checks service activity, root filesystem usage, and memory usage, validates the usage values, and returns one overall exit code. Ubuntu runs verified success (`0`), service or resource-check failure (`1`), invalid input (`1`), and preservation of an earlier service failure despite successful resource checks. Final source inspection confirmed `service='nginx'`, live disk and memory measurements, and both thresholds restored to `80`. The repository script matches that logic. Connectivity checks and cron execution remain pending.
+**Status:** The repository script checks service activity, root filesystem usage, memory usage, and ICMP reachability, returning one overall exit code. Ubuntu runs verified service or resource-check failure (`1`), invalid input (`1`), ICMP failure (`1`), and preservation of an earlier service failure despite successful resource and ICMP checks. After normal settings were restored, the final run passed all four checks and returned `0`. The supplied final Ubuntu source matches the repository logic. Logging and cron execution remain pending.
 
 ## First Verified Service Check
 
@@ -279,7 +279,50 @@ An intermediate run also printed `line 31: [: : integer expected`, followed by `
 
 The final supplied source confirmed `service='nginx'`, actual measurements from `df` and `free`, and both `disk_limit=80` and `memory_limit=80`. The memory comparison is nested inside its numeric-input guard, with initialization only at the start and one exit at the end. The repository already contained the memory logic with the temporary threshold `30`; that threshold was restored to `80` to match the verified final Ubuntu source.
 
+## IPv4 Reachability Baseline
+
+The lab owner ran the following commands on Ubuntu:
+
+```bash
+ping -n -c 1 -W 2 1.1.1.1
+echo $?
+```
+
+The supplied output showed one packet transmitted, one reply received, **0% packet loss**, a round-trip time of **17.203 ms**, and exit code **`0`**. This verifies ICMP reachability of `1.1.1.1` at the time of the test.
+
+The options request numeric output without name lookups (`-n`), one echo request (`-c 1`), and a two-second response timeout (`-W 2`). Saved-script integration is documented below.
+
+### Saved-Script ICMP Success
+
+The lab owner added `ping_target='1.1.1.1'` and an `if ping ...` block after the memory check, before the final exit. The condition redirects standard output and standard error to `/dev/null`; it uses the command's exit status to select its branch. A failed ICMP check sets `exit_code=1`, and a successful check prints its message without resetting the accumulated result. Repository inspection confirmed this block, including its closing `fi`.
+
+The supplied Ubuntu run of `bash ~/linux-lab/scripts/health-check.sh`, followed immediately by `echo $?`, produced:
+
+```text
+OK: nginx is running
+OK: root filesystem usage is 49%
+OK: memory usage is 33%
+OK: 1.1.1.1 responds to ICMP
+0
+```
+
+This verifies the ICMP success branch as part of the four-check script. The following runs verified failure handling and restoration of normal settings.
+
+### ICMP Failure, Overall Status, and Recovery
+
+The lab owner repeated the script with a temporary ICMP target and a missing unit, then restored the normal settings. Each run's exit code was read immediately afterward with `echo $?`.
+
+| Service setting | ICMP target | Observed results | Exit code |
+| --- | --- | --- | --- |
+| `nginx` | `192.0.2.1` | Service, disk (49%), and memory (33%) OK; `ERROR: ICMP check failed for 192.0.2.1` | `1` |
+| `linux-lab-missing.service` | `1.1.1.1` | Service ERROR; disk (49%), memory (33%), and ICMP OK | `1` |
+| `nginx` | `1.1.1.1` | Service, disk (49%), memory (34%), and ICMP all OK | `0` |
+
+The failed ICMP check set the overall failure status. The missing-unit run confirmed that the subsequent successful disk, memory, and ICMP checks did not clear that status. The last run confirmed recovery with normal settings. Changing the ICMP target exercised the script's failure branch; it did not establish a general network outage or a DNS failure.
+
+The final `cat ~/linux-lab/scripts/health-check.sh` output confirmed `service='nginx'`, both resource thresholds at `80`, actual measurements from `df` and `free`, and `ping_target='1.1.1.1'`. All four checks precede the single final `exit "$exit_code"`. Repository inspection confirmed matching logic with consistent indentation.
+
 ## Planned Next Steps
 
-- Add connectivity checks while preserving the overall exit code.
-- Add logging and cron scheduling, then verify an actual scheduled run.
+- Add a timestamp and overall result to each run, then verify appending output to a log file.
+- Add cron scheduling and verify an actual scheduled run.

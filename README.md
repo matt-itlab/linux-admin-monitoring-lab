@@ -2,7 +2,7 @@
 
 A practical home lab for developing Linux administration, monitoring, and troubleshooting skills for junior infrastructure and support roles.
 
-**Status:** Work in progress. Server baseline, users/groups/permissions, SSH, and Nginx configuration checks are complete. Zabbix collects verified uptime, CPU, memory, root filesystem, and network traffic metrics from `linux01`. Four controlled failures are documented with recovery checks: missing group-write permission, a firewall rule blocking HTTP, a stopped Zabbix agent, and stopped Nginx. The Nginx exercise verified a custom HTTP trigger's problem detection and recovery, restored service activity, and HTTP `200` from Windows. The [Bash health check](scripts/health-check.sh) checks service activity, root filesystem usage, and memory usage, validates the usage values, and returns one overall exit code after all three checks. Ubuntu tests verified success (`0`) and failure (`1`) for a missing unit, exceeded disk or memory thresholds, and invalid usage input. The final Ubuntu source was reviewed and synchronized into the repository with normal settings restored. Connectivity checks, cron, and a DNS/connectivity exercise remain planned work.
+**Status:** Work in progress. Server baseline, users/groups/permissions, SSH, and Nginx configuration checks are complete. Zabbix collects verified uptime, CPU, memory, root filesystem, and network traffic metrics from `linux01`. Four controlled failures are documented with recovery checks: missing group-write permission, a firewall rule blocking HTTP, a stopped Zabbix agent, and stopped Nginx. The Nginx exercise verified a custom HTTP trigger's problem detection and recovery, restored service activity, and HTTP `200` from Windows. The [Bash health check](scripts/health-check.sh) checks service activity, root filesystem usage, memory usage, and ICMP reachability of `1.1.1.1`, returning one overall exit code. Ubuntu tests verified failure (`1`) for a missing unit, exceeded disk or memory thresholds, invalid usage input, and a failed ICMP check to a test target. A successful ICMP check preserved an earlier service failure. Normal settings were restored, and the final run passed all four checks and returned `0`. Logging, cron, and a DNS/connectivity exercise remain planned work.
 
 ## Current Environment
 
@@ -32,7 +32,7 @@ Nginx, MySQL, Zabbix Server, Zabbix Agent 2, and PHP-FPM were confirmed active a
 
 ## Planned Work
 
-- Extend the Bash script with connectivity checks while preserving its overall exit code, then schedule it with cron.
+- Add timestamps and result logging to the Bash health check, schedule it with cron, and verify a scheduled run.
 - Complete the DNS/connectivity troubleshooting exercise (four other controlled failure scenarios are complete).
 - Review the completed repository for accuracy, security, and presentation.
 

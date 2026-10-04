@@ -40,4 +40,13 @@ else
     exit_code=1
 fi
 
+ping_target='1.1.1.1'
+
+if ping -n -c 1 -W 2 "$ping_target" >/dev/null 2>&1; then
+    echo "OK: $ping_target responds to ICMP"
+else
+    echo "ERROR: ICMP check failed for $ping_target"
+    exit_code=1
+fi
+
 exit "$exit_code"
