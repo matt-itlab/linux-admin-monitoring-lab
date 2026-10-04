@@ -2,7 +2,7 @@
 
 A practical home lab for developing Linux administration, monitoring, and troubleshooting skills for junior infrastructure and support roles.
 
-**Status:** Work in progress. Server baseline, users/groups/permissions, SSH, and Nginx configuration checks are complete. Zabbix collects verified uptime, CPU, memory, root filesystem, and network traffic metrics from `linux01`. Four controlled failures are documented with recovery checks: missing group-write permission, a firewall rule blocking HTTP, a stopped Zabbix agent, and stopped Nginx. The Nginx exercise verified a custom HTTP trigger's problem detection and recovery, restored service activity, and HTTP `200` from Windows. The [Bash service check](scripts/health-check.sh) was saved and tested on Ubuntu: active Nginx returned `0`, and a deliberately nonexistent unit returned `1`. Resource checks, cron, and a DNS/connectivity exercise remain planned work.
+**Status:** Work in progress. Server baseline, users/groups/permissions, SSH, and Nginx configuration checks are complete. Zabbix collects verified uptime, CPU, memory, root filesystem, and network traffic metrics from `linux01`. Four controlled failures are documented with recovery checks: missing group-write permission, a firewall rule blocking HTTP, a stopped Zabbix agent, and stopped Nginx. The Nginx exercise verified a custom HTTP trigger's problem detection and recovery, restored service activity, and HTTP `200` from Windows. The [Bash health check](scripts/health-check.sh) checks service activity and root filesystem usage, rejects empty or nonnumeric disk input, and returns one overall exit code after both checks. Ubuntu tests verified success (`0`) and failure (`1`) for a missing unit, an exceeded disk threshold, and invalid disk input. The final Ubuntu source was reviewed and synchronized into the repository with normal settings restored. Memory and connectivity checks, cron, and a DNS/connectivity exercise remain planned work.
 
 ## Current Environment
 
@@ -32,7 +32,7 @@ Nginx, MySQL, Zabbix Server, Zabbix Agent 2, and PHP-FPM were confirmed active a
 
 ## Planned Work
 
-- Extend the Bash script with disk, memory, and connectivity checks while preserving a meaningful overall exit code, then schedule it with cron.
+- Extend the Bash script with memory and connectivity checks while preserving its overall exit code, then schedule it with cron.
 - Complete the DNS/connectivity troubleshooting exercise (four other controlled failure scenarios are complete).
 - Review the completed repository for accuracy, security, and presentation.
 

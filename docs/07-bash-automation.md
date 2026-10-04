@@ -1,6 +1,6 @@
 # Bash Health Check Development
 
-**Status:** The saved single-service script is verified on Ubuntu with explicit exit codes: active Nginx produced the success message and `0`; a deliberately nonexistent unit produced the error message and `1`. The earlier incorrect success status on failure was fixed. The final file inspection confirmed that the unit name was restored to `nginx`. Resource checks and cron execution remain pending.
+**Status:** The repository script checks service activity and root filesystem usage, validates the disk input, and returns one overall exit code. Ubuntu runs verified success (`0`), either check failing (`1`), invalid disk input (`1`), and preservation of a service failure despite a successful disk check. Final source inspection confirmed `service='nginx'`, disk usage obtained through `df` and `awk`, and `disk_limit=80`. The repository script matches that logic. Memory and connectivity checks and cron execution remain pending.
 
 ## First Verified Service Check
 
@@ -65,7 +65,7 @@ This confirms that the unsuccessful `systemctl` check selected `else` and that t
 
 ## Saved Script and First Run
 
-On 2026-10-04, the lab owner supplied the output of `cat health-check.sh` from `~/linux-lab/scripts` on Ubuntu. The initial file included the `#!/usr/bin/env bash` shebang, `service='nginx'`, and the verified conditional. The repository's [scripts/health-check.sh](../scripts/health-check.sh) now includes the explicit exit-code fix documented below.
+On 2026-10-04, the lab owner supplied the output of `cat health-check.sh` from `~/linux-lab/scripts` on Ubuntu. The initial file included the `#!/usr/bin/env bash` shebang, `service='nginx'`, and the verified conditional. The repository's [scripts/health-check.sh](../scripts/health-check.sh) contains the latest verified version; the exit-code fix and subsequent disk-check integration are documented below.
 
 The lab owner then ran:
 
@@ -118,10 +118,122 @@ Each run used `bash ~/linux-lab/scripts/health-check.sh`, followed by `echo $?`.
 
 The final `cat` output confirmed both explicit exit instructions and `service='nginx'` restored in the Ubuntu file. The repository script was synchronized with that verified source.
 
-The script now reports service-check failure to its caller with code `1`. The missing-unit test verifies that failure path without establishing a Nginx outage. This implementation checks one service and exits immediately after its result; before adding further checks, termination must move to the end so every check can run and contribute to the overall result.
+That version reported service-check failure to its caller with code `1`. The missing-unit test verified that failure path without establishing a Nginx outage. It checked one service and exited immediately after its result. The later disk-check integration moved termination to the end so both checks could run and contribute to the overall result.
+
+## Root Filesystem Baseline for the Disk Check
+
+On 2026-10-04, the lab owner ran `df -P /` on Ubuntu and supplied:
+
+```text
+Filesystem                        1024-blocks    Used Available Capacity Mounted on
+/dev/mapper/ubuntu--vg-ubuntu--lv    18889392 8575168   9329344      48% /
+```
+
+The `Capacity` column reports root filesystem usage of **48%**. This describes the filesystem mounted at `/`, not the entire virtual disk. The lab disk threshold is **80%**, treating values at or above the threshold as a failed check. The observed sample is below that threshold.
+
+### Numeric Percentage Extraction
+
+The lab owner then ran:
+
+```bash
+df -P / | awk 'NR == 2 {gsub(/%/, "", $5); print $5}'
+```
+
+Observed output:
+
+```text
+48
+```
+
+The pipeline selected the second row, removed `%` from the fifth field, and printed the numeric usage value. This verifies extraction for the supplied root filesystem output.
+
+### Variable Assignment and Threshold Comparison
+
+On 2026-10-04, the lab owner captured the percentage with command substitution:
+
+```bash
+disk_usage=$(df -P / | awk 'NR == 2 {gsub(/%/, "", $5); print $5}')
+disk_limit=80
+echo "$disk_usage"
+```
+
+The output was `48`. The following comparison was then run in the terminal, first with `disk_limit=80` and again with `disk_limit=40`:
+
+```bash
+if [ "$disk_usage" -ge "$disk_limit" ]; then
+    echo "ERROR: root filesystem usage is $disk_usage%"
+else
+    echo "OK: root filesystem usage is $disk_usage%"
+fi
+```
+
+| Observed usage | Threshold | Observed output |
+| --- | --- | --- |
+| `48` | `80` | `OK: root filesystem usage is 48%` |
+| `48` | `40` | `ERROR: root filesystem usage is 48%` |
+
+The `-ge` operator tests whether usage is greater than or equal to the threshold. Lowering the threshold to `40` exercised the error branch without filling the filesystem; `80` was selected as the script default. Both branches were first verified as standalone terminal commands before the integration below.
+
+## Combined Service and Disk Check
+
+On 2026-10-04, the lab owner supplied three runs of the combined script and its final source. It initializes `exit_code=0`, sets it to `1` when either check fails, and executes a single `exit "$exit_code"` after both checks. Successful checks leave the accumulated result unchanged.
+
+Each run used `bash ~/linux-lab/scripts/health-check.sh`; `echo $?` was executed immediately after the script to read its exit code.
+
+| Test case | Service message | Disk message | Exit code |
+| --- | --- | --- | --- |
+| Active Nginx, normal disk threshold | `OK: nginx is running` | `OK: root filesystem usage is 48%` | `0` |
+| Deliberately nonexistent unit, normal disk threshold | `ERROR: linux-lab-missing.service is not active` | `OK: root filesystem usage is 48%` | `1` |
+| Active Nginx, temporarily lowered disk threshold | `OK: nginx is running` | `ERROR: root filesystem usage is 48%` | `1` |
+
+All three runs printed both messages. The missing-unit case confirms that the disk check still runs after a service failure and that its success does not overwrite the failure exit code. The disk-failure case verifies that a later failure also sets the overall result to `1`.
+
+The final `cat health-check.sh` output confirmed that `service='nginx'` and `disk_limit=80` had been restored, with a single exit at the end. The repository script was synchronized with that source. These tests used a missing unit and a lower threshold; they did not require stopping Nginx or filling the filesystem.
+
+### Disk-Input Validation
+
+The first combined version assumed that extraction returned an integer. An empty or nonnumeric result would make `[` report an error and select the `else` branch, producing an incorrect disk `OK` message. The validation developed below now rejects those inputs and sets the overall failure flag before any threshold comparison.
+
+### Standalone Numeric Validation Exercise
+
+On 2026-10-04, the lab owner tested `[[ "$disk_usage" =~ ^[0-9]+$ ]]` in the Ubuntu terminal. The first attempt selected the correct message for all three inputs but placed `exit_code=1` in the numeric-success branch. The lab owner then moved the assignment into the invalid-input branch and repeated the tests, initializing `exit_code=0` before each isolated run.
+
+The corrected conditional was:
+
+```bash
+if [[ "$disk_usage" =~ ^[0-9]+$ ]]; then
+    echo "OK: disk usage is numeric"
+else
+    echo "ERROR: invalid disk usage"
+    exit_code=1
+fi
+echo "exit_code=$exit_code"
+```
+
+| Assigned value | Observed message | Observed flag output |
+| --- | --- | --- |
+| `48` | `OK: disk usage is numeric` | `exit_code=0` |
+| Empty string | `ERROR: invalid disk usage` | `exit_code=1` |
+| `abc` | `ERROR: invalid disk usage` | `exit_code=1` |
+
+These runs verify classification and the stored failure flag. They printed the variable's value, not a script process exit code. In the combined script, initialization must remain at the start so disk validation preserves any earlier service failure. The integration exercise called for running the threshold comparison only inside the numeric-input branch and marking invalid input as a failed check.
+
+### Saved-Script Validation Tests
+
+On 2026-10-04, the lab owner supplied four subsequent executions of `bash ~/linux-lab/scripts/health-check.sh`, reading each process exit code immediately afterward with `echo $?`:
+
+| Run | Service message | Disk message | Exit code |
+| --- | --- | --- | --- |
+| Normal input | `OK: nginx is running` | `OK: root filesystem usage is 48%` | `0` |
+| First invalid-input test | `OK: nginx is running` | `ERROR: invalid disk usage` | `1` |
+| Second invalid-input test | `OK: nginx is running` | `ERROR: invalid disk usage` | `1` |
+| Deliberately nonexistent unit | `ERROR: linux-lab-missing.service is not active` | `OK: root filesystem usage is 48%` | `1` |
+
+The two requested invalid inputs were an empty string and `abc`; the transcript showed the script results but not the intervening edits. Both invalid-input runs returned failure without printing a disk `OK` message. The missing-unit run confirmed that a successful disk check preserved the service failure.
+
+After these tests, the lab owner supplied the final `cat ~/linux-lab/scripts/health-check.sh` output. It confirmed restoration of `service='nginx'`, the `df` and `awk` pipeline, and `disk_limit=80`. Source review confirmed that the threshold comparison is nested inside the numeric-input branch, invalid input sets `exit_code=1`, initialization occurs once at the start, and a single `exit "$exit_code"` remains at the end. The repository script was synchronized with this logic, using consistent indentation.
 
 ## Planned Next Steps
 
-- Inspect root filesystem usage and define the disk check's warning threshold.
-- Add disk usage, memory, and connectivity checks incrementally, collecting failures and returning one overall exit code after all checks.
+- Add memory and connectivity checks incrementally.
 - Add logging and cron scheduling, then verify an actual scheduled run.
