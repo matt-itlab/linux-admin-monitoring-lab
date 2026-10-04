@@ -1,6 +1,6 @@
 # Networking and Firewall Verification
 
-**Status:** Core verification and the controlled HTTP blocking scenario are complete. A temporary deny rule caused a Windows curl timeout while Nginx remained active and served the lab page locally; the rule's counter recorded `6` dropped packets. After the rule was removed, UFW remained active with the baseline SSH and HTTP allow rules, Windows received the lab HTML with HTTP `200` and curl exit code `0`, and the browser displayed the Zabbix login page again.
+**Status:** Network verification and both controlled failures are complete. The HTTP firewall exercise demonstrated blocked client traffic while Nginx remained healthy locally; removing the temporary rule restored Windows access. The DNS exercise demonstrated a name-resolution timeout while numeric IP reachability still worked; restoring the original DNS server list restored name resolution.
 
 ## Existing Network and Access Paths
 
@@ -109,7 +109,7 @@ The [browser screenshot](../screenshots/zabbix-login.png) showed the Zabbix logi
 | HTTP HEAD request from Windows | `200 OK` from the forwarded endpoint |
 | Browser access from Windows | Zabbix login page displayed |
 
-These results confirm HTTP access from the Windows host through the configured NAT path while UFW is active. At this stage they established frontend login-page availability. Subsequent successful login and opening the dashboard are recorded in [Zabbix monitoring verification](06-zabbix-monitoring.md); metric collection, triggers, and monitoring recovery still require validation.
+These results confirm HTTP access from the Windows host through the configured NAT path while UFW is active. They established frontend login-page availability at this stage. Subsequent authenticated access, metric collection, and trigger recovery are recorded in [Zabbix monitoring verification](06-zabbix-monitoring.md).
 
 The separate static lab page was subsequently verified at the same endpoint using `Host: lab.test`, while browser access by IP continued to show Zabbix. See [Nginx site configuration](05-nginx.md) for the reload and HTTP routing tests.
 
@@ -267,6 +267,85 @@ A browser screenshot supplied for the recovery check showed the Zabbix login for
 
 The exercise demonstrated why service state, local HTTP responses, firewall rule order, and packet counters should be considered together: a service can be healthy locally while incoming client traffic is blocked.
 
-## Pending Work
+## Controlled DNS Failure and Recovery
 
-- Reassess monitoring access rules when the required communication paths are known.
+### Baseline
+
+On 2026-10-04, the lab owner ran these commands on Ubuntu before the DNS failure exercise:
+
+```bash
+resolvectl status
+getent ahostsv4 ubuntu.com
+echo $?
+```
+
+The supplied resolver configuration was:
+
+| Setting | Observed value |
+| --- | --- |
+| `resolv.conf` mode | `stub` |
+| Interface | `enp0s3` (link 2) |
+| Current DNS server | `178.235.153.33` |
+| Configured DNS servers | `178.235.153.33`, `178.235.153.32`, `fd17:625c:f037:2::3` |
+| DNS scope | `DNS` |
+| DNS default route | `yes` |
+
+The name lookup returned IPv4 addresses `185.125.190.20`, `185.125.190.21`, and `185.125.190.29`, with exit code **`0`**. The output listed each address for the `STREAM`, `DGRAM`, and `RAW` socket types. This establishes successful name resolution before fault injection and records the DNS server list needed for restoration.
+
+### Fault Injection and Diagnosis
+
+The lab owner temporarily replaced the interface's DNS server list with a test address and cleared the local resolver cache:
+
+```bash
+sudo resolvectl dns enp0s3 192.0.2.1
+sudo resolvectl flush-caches
+resolvectl status enp0s3
+```
+
+The status output showed only `192.0.2.1` under `DNS Servers`, with DNS scope and default route still enabled for `enp0s3`. The commands changed the active per-interface resolver settings. See the [resolvectl reference](https://manpages.ubuntu.com/manpages/resolute/man1/resolvectl.1.html).
+
+The lab owner compared numeric IP reachability with name resolution:
+
+```bash
+ping -n -c 1 -W 2 1.1.1.1
+echo $?
+timeout 15s getent ahostsv4 ubuntu.com
+echo $?
+```
+
+| Check during the fault | Observed result | Exit code |
+| --- | --- | --- |
+| ICMP to `1.1.1.1` | One reply, 0% packet loss, RTT `18.209 ms` | `0` |
+| IPv4 lookup of `ubuntu.com` | No addresses returned before the 15-second limit | `124` |
+
+Exit code `124` comes from `timeout`: the lookup exceeded the time limit. It is not an HTTP status or a DNS response such as NXDOMAIN. See the [timeout reference](https://manpages.ubuntu.com/manpages/resolute/man1/timeout.1.html).
+
+The successful ping showed that numeric IPv4 reachability to the tested address still worked. The resolver configuration and failed lookup pointed to the substituted DNS server, rather than a loss of all network connectivity.
+
+### Restoration and Verification
+
+The lab owner restored all three original servers, flushed the cache again, and repeated the lookup:
+
+```bash
+sudo resolvectl dns enp0s3 178.235.153.33 178.235.153.32 fd17:625c:f037:2::3
+sudo resolvectl flush-caches
+timeout 15s getent ahostsv4 ubuntu.com
+echo $?
+resolvectl status enp0s3
+```
+
+| Recovery evidence | Observed result |
+| --- | --- |
+| Name lookup | `185.125.190.20`, `185.125.190.21`, and `185.125.190.29` returned |
+| Lookup exit code | `0` |
+| Current DNS server | `178.235.153.33` |
+| Configured DNS servers | `178.235.153.33`, `178.235.153.32`, `fd17:625c:f037:2::3` |
+| Interface DNS default route | `yes` |
+
+**Scenario outcome:** Resolved. The temporary DNS server substitution caused the lookup to time out; restoring the original server list restored name resolution. No persistent network configuration edit was part of this exercise.
+
+The [Bash health check](07-bash-automation.md) tests ICMP to a numeric address. That check alone cannot detect this DNS fault. The script was not run during this exercise; the direct ping and lookup provide the observed comparison.
+
+## Monitoring Access Scope
+
+Zabbix Server and Agent 2 communicate on the same VM through loopback. No additional incoming UFW rules were needed for the verified monitoring exercises. Monitoring an external host would require a separate review of the relevant communication path.

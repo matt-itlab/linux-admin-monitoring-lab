@@ -1,6 +1,6 @@
 # Server Setup and Initial Verification
 
-**Status:** Initial server baseline verification complete. Functional Zabbix validation remains pending. The observations below are based on terminal results and confirmations provided by the lab owner.
+**Status:** Server baseline, package upgrade, and post-reboot verification are complete. Subsequent functional checks are recorded in [Nginx](05-nginx.md) and [Zabbix monitoring](06-zabbix-monitoring.md). The observations below are based on terminal results and confirmations provided by the lab owner.
 
 ## Confirmed Environment
 
@@ -39,7 +39,7 @@ The socket inspection showed:
 | 10050 | `zabbix_agent2` |
 | 10051 | `zabbix_server` |
 
-SSH login was subsequently confirmed. The other listeners establish that processes are present; HTTP responses, Zabbix configuration, metric collection, and alerts have not yet been validated.
+SSH login was subsequently confirmed. This initial socket inspection established that processes were listening; later HTTP and monitoring tests are recorded in the corresponding stage documents.
 
 ## SSH Access
 
@@ -191,7 +191,7 @@ The running kernel was `7.0.0-31-generic`. The failed-unit query returned `0 loa
 
 ### Restore Point
 
-The lab owner confirmed that the VirtualBox snapshot `before-baseline-upgrade` was saved before installing updates. This is the rollback point for the planned package upgrade.
+The lab owner confirmed that the VirtualBox snapshot `before-baseline-upgrade` was saved before installing updates as a rollback point. A snapshot restore was not tested.
 
 ### Package Upgrade Result
 
@@ -232,7 +232,7 @@ apt list --upgradable
 
 The `un` entries for `zabbix-apache-conf` and `zabbix-server-pgsql` represent packages that are not installed. The observed stack uses Nginx and MySQL.
 
-**Upgrade status:** The initial package upgrade and reboot verification are complete. Service activity is confirmed; HTTP responses, Zabbix metrics, alerts, and recovery still require functional testing.
+**Upgrade status:** The initial package upgrade and reboot verification are complete. These checks confirm package versions and service activity; later HTTP, metric, and trigger recovery tests provide the application-level evidence.
 
 ## Hostname Change
 
@@ -288,8 +288,8 @@ systemctl is-active nginx mysql zabbix-server zabbix-agent2 php8.5-fpm
 
 The hostname remained `linux01`, and the local lookup returned `127.0.1.1 linux01 ubuntu-server-26`. No failed systemd units were listed. Nginx, MySQL, Zabbix Server, Zabbix Agent 2, and PHP-FPM all returned `active`.
 
-These results confirm that the hostname change persisted across the reboot and that the five checked services were active afterward. Application-level monitoring checks remain pending.
+These results confirm that the hostname change persisted across the reboot and that the five checked services were active afterward.
 
-## Deferred Monitoring Validation
+## Subsequent Functional Verification
 
-The Zabbix login page was subsequently verified from Windows during the [networking and firewall checks](04-networking-and-firewall.md). The lab owner later confirmed successful login and opening the dashboard; see [Zabbix monitoring verification](06-zabbix-monitoring.md). Current metric collection, alerts, and recovery still require functional validation during the monitoring stage. Active service states and frontend access alone do not establish that monitoring works.
+The [networking and firewall checks](04-networking-and-firewall.md) confirmed Windows HTTP access and recovery from HTTP blocking and DNS faults. [Zabbix monitoring verification](06-zabbix-monitoring.md) records authenticated access, collected metrics, and agent-availability and HTTP trigger problem/recovery events. These functional results supplement the initial service-state checks.

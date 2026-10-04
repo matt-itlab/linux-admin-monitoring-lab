@@ -94,7 +94,7 @@ In **Monitoring → Latest data**, the screenshot showed these rows for `Zabbix 
 | `System name` | Blank | Blank | Blank |
 | `System uptime` | `3s` | `00:15:54` | `+00:00:30` |
 
-The uptime row provides direct evidence of recent data collection: its last-check age was three seconds at capture, and the displayed value was 15 minutes and 54 seconds, increasing by 30 seconds from the previous value. This confirms collection of this metric; other metrics and alert behavior still need verification.
+The uptime row provides direct evidence of recent data collection: its last-check age was three seconds at capture, and the displayed value was 15 minutes and 54 seconds, increasing by 30 seconds from the previous value. The subsequent sections record the other metrics and trigger behavior.
 
 No value or last-check age was visible for `System name` in that first screenshot. At that point, the Ubuntu command confirmed the OS hostname, but the corresponding Zabbix value had not been verified. An immediate check using **Execute now** was suggested.
 
@@ -379,10 +379,10 @@ The event lasted **11 minutes 30 seconds**, using the UI's timestamps. The servi
 
 Service activity, Windows HTTP recovery, and the resolved custom trigger complete the Nginx monitoring exercise. The results demonstrate local HTTP failure detection by Zabbix Server and recovery of access through Windows NAT forwarding.
 
-## Next Steps
+## Evidence and Scope
 
-- Build the Bash health check incrementally, then verify scheduled execution with cron.
-- Complete the planned DNS/connectivity troubleshooting exercise.
-- Revisit the retained `matt` configuration if its intended target is identified.
+Both monitoring outage exercises are complete: Agent 2 recovery restored metric collection, and Nginx recovery restored HTTP access. The corresponding availability and custom HTTP problem events were resolved. The repository includes the [HTTP recovery screenshot](../screenshots/zabbix-nginx-recovery.png); other supplied screenshots are transcribed above and are not all stored as image files.
 
-Both monitoring outage exercises are complete: Agent 2 recovery restored metric collection, and Nginx recovery restored HTTP access. The corresponding availability and custom HTTP problem events were resolved.
+Zabbix Server runs on the monitored VM. These exercises verify agent and HTTP availability while the monitoring server can run; they do not demonstrate detection of the entire VM being powered off. External notifications such as email were not configured or tested. Nginx also serves the frontend, so stopping it removes browser access until the service is restored.
+
+The unidentified `matt` entry remains disabled, with its original target unresolved. The later [Bash and cron](07-bash-automation.md) and [DNS troubleshooting](04-networking-and-firewall.md#controlled-dns-failure-and-recovery) exercises are complete.

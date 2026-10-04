@@ -28,12 +28,14 @@ It returned:
 
 This verifies that the inspected public key uses Ed25519 and has the comment `matt-linux-lab`. The SHA256 fingerprint identifies the key when checking its transfer to Ubuntu. This result alone does not establish that the server accepts the key for login.
 
+The later successful login screenshot records the custom client path `C:\Users\Matt.ssh\id_ed25519_linux_lab`. The transfer and login commands below use that observed location. It differs from the `.ssh` directory inside the user profile used in the initial fingerprint command above; use the actual key location when repeating a connection. No directory move is established by these observations.
+
 ## Public Key Transfer and Server-side Inspection
 
 The lab owner transferred the public key from Windows to the Ubuntu account's home directory using SCP on port `2222`:
 
 ```powershell
-scp -P 2222 "$env:USERPROFILE\.ssh\id_ed25519_linux_lab.pub" matt@127.0.0.1:linux-lab-key.pub
+scp -P 2222 "$env:USERPROFILE.ssh\id_ed25519_linux_lab.pub" matt@127.0.0.1:linux-lab-key.pub
 ```
 
 SCP reported a completed transfer of 97 bytes. After connecting to Ubuntu with the account password, the lab owner ran:
@@ -67,7 +69,7 @@ The result matched the client key's fingerprint `SHA256:6mh4xertrJnO5/HENQpFZw4Q
 The lab owner then opened a new connection from Windows PowerShell:
 
 ```powershell
-ssh -p 2222 -i "$env:USERPROFILE\.ssh\id_ed25519_linux_lab" -o IdentitiesOnly=yes -o PreferredAuthentications=publickey matt@127.0.0.1
+ssh -p 2222 -i "$env:USERPROFILE.ssh\id_ed25519_linux_lab" -o IdentitiesOnly=yes -o PreferredAuthentications=publickey matt@127.0.0.1
 ```
 
 The client prompted for the private key's passphrase and opened an Ubuntu shell. The connection restricted authentication to `publickey`, so the successful login did not fall back to the Ubuntu account password. The passphrase unlocks the private key locally; it is separate from the account password.
